@@ -12,6 +12,7 @@
 from string import ascii_letters
 import copy
 import re
+import json
 
 # Remove large rules (more than 2 states in the right part, eg. A->BCD)
 def large(rules,let,voc):
