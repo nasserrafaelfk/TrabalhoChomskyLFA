@@ -1,18 +1,8 @@
-#-------------------------------------------------------------------------------
-# Name:        Context-Free Grammar to Normal-Chomsky Form (CFG to NCF)
-# Purpose:     This script transforms a context-free grammar to Normal-Chomsky
-#              form, according to the book 'Elements of Theory of Computation'
-#              written by Lewis and Papadimitriou.
-#
-# Author:      Nikos Katirtzis (nikos912000)
-#
-# Created:     29/04/2014
-#-------------------------------------------------------------------------------
-
 from string import ascii_letters
 import copy
-import re
 import json
+import traceback
+import jsbeautifier
 
 # Remove large rules (more than 2 states in the right part, eg. A->BCD)
 def large(rules,let,voc):
@@ -93,27 +83,27 @@ def short(rules,voc):
 
     # create a dictionary in the form letter:letter (at the beginning
     # D(A) = {A})
-    D = dict(zip(voc, voc))
+    terminals = dict(zip(voc, voc))
 
     # just transform value from string to list, to be able to insert more values
-    for key in D:
-        D[key] = list(D[key])
+    for key in terminals:
+        terminals[key] = list(terminals[key])
 
     # for every letter A of the vocabulary, if B->C, B in D(A) and C not in D(A)
     # add C in D(A)
     for letter in voc:
         for key in rules:
-            if key in D[letter]:
+            if key in terminals[letter]:
                 values = rules[key]
                 for i in range(len(values)):
-                    if len(values[i]) == 1 and values[i] not in D[letter]:
-                        D.setdefault(letter, []).append(values[i])
+                    if len(values[i]) == 1 and values[i] not in terminals[letter]:
+                        terminals.setdefault(letter, []).append(values[i])
 
-    rules,D = short1(rules,D)
-    return rules,D
+    rules,terminals = short1(rules,terminals)
+    return rules,terminals
 
 
-def short1(rules,D):
+def short1(rules,terminals):
 
     # remove short rules (with length in right side = 1)
     new_dict = copy.deepcopy(rules)
@@ -124,42 +114,47 @@ def short1(rules,D):
                 rules[key].remove(values[i])
         if len(rules[key]) == 0: rules.pop(key, None)
 
-    # replace each rule A->BC with A->B'C', where B' in D(B) and C' in D(C)
+    # replace each rule A->BC with A->B'C', where B' in terminals(B) and C' in D(C)
     for key in rules:
         values = rules[key]
         for i in range(len(values)):
             # search all possible B' in D(B)
-            for j in D[values[i][0]]:
+            for j in terminals[values[i][0]]:
                 # search all possible C' in D(C)
-                for k in D[values[i][1]]:
+                for k in terminals[values[i][1]]:
                     # concatenate B' and C' and insert a new rule
                     if j+k not in values:
                         rules.setdefault(key, []).append(j + k)
 
-    return rules,D
+    return rules,terminals
 
 
 # Insert rules S->BC for every A->BC where A in D(S)-{S}
-def final_rules(rules,D,S):
+def final_rules(rules,terminals,starter):
 
-    for let in D[S]:
+    for let in terminals[starter]:
         # check if a key has no values
-        if not rules[S] and not rules[let]:
+        if not rules[starter] and not rules[let]:
             for v in rules[let]:
-                if v not in rules[S]:
-                    rules.setdefault(S, []).append(v)
+                if v not in rules[starter]:
+                    rules.setdefault(starter, []).append(v)
     return rules
 
 # Print rules
-def print_rules(rules):
-    for key in rules:
-        values = rules[key]
-        for i in range(len(values)):
-            print(key + '->' + values[i])
-    return 1
+def print_rules(variables, terminals, rules, starter):
+    auxRules = []
+    for var in rules.keys():
+        for rule in rules[var]:
+            auxRules.append([var, rule])
+    data = {}
+    data["glc"] = [variables, terminals, auxRules, starter]
+    json_data = json.dumps(data)
+    options = jsbeautifier.default_options()
+    options.indent_size = 2
+    print(jsbeautifier.beautify(json_data, options))
 
 
-def main():
+def main(archive):
 
     rules = {}
     voc = []
@@ -168,64 +163,32 @@ def main():
 
     let.remove('e')
 
-    f = open("G.json", "r")
-    print(f.read())
-
-    # Number of grammar rules
-    while True:
-        userInput = input('Give number of rules')
+    try: 
+        file = open(archive)    
         try:
-            # check if N is integer >=2
-            N = int(userInput)
-            if N <=2: print('N must be a number >=2!')
-            else: break
-        except ValueError:
-            print("That's not an int!")
+            data = json.load(file)
+            variables = data['glc'][0]
+            terminals = data['glc'][1]
+            rules = data['glc'][2]                  # Number of grammar rules
+            starter = data['glc'][3]
+        except Exception as e:
+            traceback.print_exc()
+            print("\nSomething went wrong")
+            print( f"Error: {e}\n")
+        finally:
+            file.close()
+    except:
+        print("Something went wrong when opening the file")
+        print("To run the script use: python [path to main.py] [path to json]")
+
+    
 
     # Initial state
-    while True:
-        S = input('Give initial state')
-        if not re.match("[a-zA-Z]*$", S): print( 'Initial state must be a single character!')
-        else:break
-
-    print('+------------------------------------------------------+')
-    print('|Give rules in the form A B (space-delimited), for A->B|')
-    print('|or A BCD, if more than one states in the right part   |')
-    print('|(without spaces between right part members).          |')
-    print('+------------------------------------------------------+')
-
-    for i in range(N):
-        # A rule is actually in the form fr->to. However, user gives fr to.
-        fr, to = map(str,input('Rule #' + str(i + 1)).split())
-        # Remove given letters from "letters pool"
-        for l in fr:
-            if l!='e' and l not in voc: voc.append(l)
-            if l in let: let.remove(l)
-        for l in to:
-            if l!='e' and l not in voc: voc.append(l)
-            if l in let: let.remove(l)
-        # Insert rule to dictionary
-        rules.setdefault(fr, []).append(to)
-
-    # remove large rules and print new rules
-    print('\nRules after large rules removal')
-    rules,let,voc = large(rules,let,voc)
-    print_rules(rules)
-    #print voc
-
-    # remove empty rules and print new rules
-    print('\nRules after empty rules removal')
-    rules,voc = empty(rules,voc)
-    print_rules(rules)
-    #print voc
-
-    print('\nRules after short rules removal')
-    rules,D = short(rules,voc)
-    print_rules(rules)
 
     print('\nFinal rules')
-    rules = final_rules(rules,D,S)
+    rules = final_rules(rules,terminals,starter)
     print_rules(rules)
 
-if __name__ == '__main__':
-    main()
+if __name__ == "__main__":
+    #print(f"size: {len(sys.argv)} & content: {sys.argv}")    
+    main('G.json')
